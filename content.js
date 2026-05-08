@@ -99,6 +99,23 @@
     return !skip.some((p) => p.test(t));
   }
 
+  // Math Academy URL pattern:
+  //   https://mathacademy.com/tasks/<TASK_ID>/topics/<TOPIC_ID>/<kind>
+  // where <kind> is one of "lesson", "multistep", "quiz", "review", etc.
+  // The TOPIC_ID is stable across re-attempts and lesson renames, which
+  // makes it a much better DB key than the lesson title text.
+  function detectLessonContext() {
+    const m = (location.pathname || '').match(/\/tasks\/([^/]+)\/topics\/([^/]+)(?:\/([^/?#]+))?/);
+    if (!m) return null;
+    return { taskId: m[1], topicId: m[2], kind: m[3] || 'lesson' };
+  }
+
+  // Build a stable storage key for the DB. Topic ID wins when present.
+  function topicKey(topic, ctx) {
+    if (ctx && ctx.topicId) return 'topicid:' + ctx.topicId;
+    return (topic || '').toLowerCase().trim();
+  }
+
   function detectTopic() {
     const candidates = [];
     const add = (text, priority) => {
@@ -127,7 +144,10 @@
             .replace(/^\d+\.\d+(\.\d+)?\s*/, '')
             .replace(/^(Unit|Section|Lesson|Chapter)\s*\d+\s*[:.\-]\s*/i, '')
             .trim();
-          if (cleaned.length > 2 && cleaned.length < 80 && el.offsetParent !== null) add(cleaned, 9);
+          // getClientRects beats offsetParent here — offsetParent is null
+          // for position:fixed elements even when they're visible, which
+          // would silently skip topic titles in fixed headers.
+          if (cleaned.length > 2 && cleaned.length < 80 && el.getClientRects().length > 0) add(cleaned, 9);
         });
       } catch (e) {}
     }
@@ -200,10 +220,13 @@
   // ── Overlay ─────────────────────────────────────────────────
   function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
 
-  // Tracks the postMessage handler attached to the currently-open overlay
-  // so we can remove it cleanly on close (otherwise stacked listeners
-  // would all fire for any postMessage and re-trigger error handling).
+  // Tracks the postMessage handler + watchdog timer attached to the
+  // currently-open overlay so we can remove them cleanly on close.
+  // (Stacked listeners would all fire for any postMessage; an orphan
+  // timer would overwrite a successfully-recovered video with "couldn't
+  // load this video" 12 seconds later.)
   let currentPlayerMsgHandler = null;
+  let currentLoadWatchdog = null;
 
   function closeOverlay() {
     const ex = document.getElementById('khan-booster-overlay');
@@ -212,6 +235,10 @@
     if (currentPlayerMsgHandler) {
       window.removeEventListener('message', currentPlayerMsgHandler);
       currentPlayerMsgHandler = null;
+    }
+    if (currentLoadWatchdog) {
+      clearTimeout(currentLoadWatchdog);
+      currentLoadWatchdog = null;
     }
   }
 
@@ -228,8 +255,9 @@
     const ytSearch = `https://www.youtube.com/results?search_query=${encodeURIComponent('khan academy ' + (topic || 'math'))}`;
     const ytWatch = yt ? `https://www.youtube.com/watch?v=${encodeURIComponent(yt)}` : null;
 
-    // Track real video opens (not the loading skeleton or the empty state).
-    if (yt && topic && !videoData?.loading && typeof KBdb !== 'undefined') {
+    // Track real video opens (not the loading skeleton, the empty state,
+    // or the silent recovery cascade — those would triple-count one click).
+    if (yt && topic && !videoData?.loading && !videoData?._recoveryDepth && typeof KBdb !== 'undefined') {
       try {
         KBdb.bumpStats();
         KBdb.recordHistory({ topic, youtube: yt, title, source: videoData.source || 'local-map' });
@@ -354,8 +382,13 @@
         if (!id) { showMsg("Couldn't read a YouTube video ID from that.", 'err'); return; }
         if (!topic) { showMsg('No topic to save against.', 'err'); return; }
         if (typeof KBdb === 'undefined') { showMsg('Storage unavailable.', 'err'); return; }
+        // Prefer the URL-derived topic ID as the storage key — it's stable
+        // across lesson title rewrites. Fall back to the topic text when
+        // no lesson context is available (e.g. dashboard view).
+        const ctx = detectLessonContext();
+        const key = topicKey(topic, ctx);
         try {
-          await KBdb.saveMapping(topic, { youtube: id, title: topic, source: 'user' });
+          await KBdb.saveMapping(key, { youtube: id, title: topic, source: 'user' });
           showMsg('Saved. Reloading video…', 'ok');
           setTimeout(() => {
             showOverlay(topic, wrapSaved({ youtube: id, title: topic, source: 'user' }, topic));
@@ -370,8 +403,12 @@
     if (overrideClear) {
       overrideClear.addEventListener('click', async () => {
         if (typeof KBdb === 'undefined' || !topic) return;
+        const ctx = detectLessonContext();
         try {
+          // Clear both keys so a stale text-keyed entry can't outlive the
+          // current topic-ID one (or vice versa).
           await KBdb.deleteMapping(topic);
+          if (ctx && ctx.topicId) await KBdb.deleteMapping(topicKey(topic, ctx));
           showMsg('Cleared. Resolving fresh video…', 'ok');
           setTimeout(async () => {
             const data = await resolveVideoData(topic);
@@ -444,10 +481,16 @@
     };
 
     const showFailure = async (reason, code) => {
-      if (resolved) return;
-      resolved = true;
+      // YT errors arrive AFTER the player.html iframe has already loaded
+      // (same-origin → instant load). Don't gate on `resolved` for those —
+      // only use it for the 12s timeout so we don't false-positive when
+      // playback is happening. `recovered` still prevents re-entry.
+      if (recovered) return;
+      if (reason === 'timeout' && resolved) return;
       LOG('iframe failed:', reason, code);
-      // First try to silently recover with a related topic.
+      // Cancel the watchdog so it can't overwrite a successful recovery.
+      if (currentLoadWatchdog) { clearTimeout(currentLoadWatchdog); currentLoadWatchdog = null; }
+      // Try to silently recover with a related topic.
       if (await tryRecovery(reason)) return;
       const videoBox = wrap.querySelector('.kb-video');
       if (!videoBox) return;
@@ -470,19 +513,44 @@
 
     // postMessage from our player.html (same-origin chrome-extension://).
     // closeOverlay() will tear this down via currentPlayerMsgHandler.
+    // Note: we mark `resolved` only on type==='ready' (forwarded from
+    // YouTube's onReady event in player.js) — NOT on 'loaded' (which fires
+    // immediately from the player.html shell loading) — because an embed-
+    // disabled video still triggers 'loaded' before sending the error.
+    let postLoadGrace = null;
     const onMsg = (e) => {
       const d = e && e.data;
       if (!d || d.source !== 'kb-player') return;
-      if (d.type === 'loaded') { resolved = true; LOG('player loaded', d.yt); }
+      if (d.type === 'loaded') {
+        LOG('player shell loaded', d.yt);
+        // Safety net: YouTube's onReady event isn't 100% reliable across
+        // embed configurations. If 5s passes after the shell loaded with
+        // no error, assume the player is working. (The watchdog timer
+        // still applies, but this lets us call the playback "good" sooner
+        // and stops the 12s watchdog from incorrectly firing for users
+        // whose YT player never sends onReady.)
+        if (postLoadGrace) clearTimeout(postLoadGrace);
+        postLoadGrace = setTimeout(() => {
+          if (!resolved && !recovered) {
+            resolved = true;
+            LOG('player assumed ready (no onReady within grace)');
+          }
+        }, 5000);
+      }
+      if (d.type === 'ready') { resolved = true; LOG('player ready', d.yt); }
       if (d.type === 'error') showFailure(d.reason || 'yt-error', d.code);
     };
     window.addEventListener('message', onMsg);
     currentPlayerMsgHandler = onMsg;
-    // Also wire iframe-level events as backup.
-    iframe.addEventListener('load', () => { resolved = true; LOG('iframe loaded'); });
+    // iframe-level error event for the rare case where the chrome-extension
+    // page itself fails to load (it shouldn't). Don't trust the load event
+    // for resolution — it fires for our shell, not the YT player inside.
     iframe.addEventListener('error', () => showFailure('iframe-error'));
-    // Timeout: 12s is enough for YT player to either load or report error.
-    setTimeout(() => { if (!resolved) showFailure('timeout'); }, 12000);
+    // Watchdog: if neither 'ready' nor 'error' has come in 12s, give up.
+    currentLoadWatchdog = setTimeout(() => {
+      currentLoadWatchdog = null;
+      if (!resolved) showFailure('timeout');
+    }, 12000);
   }
 
   // ── Public API for popup ────────────────────────────────────
@@ -528,12 +596,14 @@
   }
 
   async function resolveVideoData(topic) {
+    const ctx = detectLessonContext();
     // 0) Database first — user overrides + previously cached YT hits.
-    //    User overrides outrank everything (including a local map hit), so a
-    //    student who corrected a bad video gets their version forever.
+    //    Try topic-ID key first (stable across renames), then fall back to
+    //    the topic-text key for back-compat with mappings saved before v4.1.
     if (typeof KBdb !== 'undefined') {
       try {
-        const saved = await KBdb.getMapping(topic);
+        const byId = ctx && ctx.topicId ? await KBdb.getMapping(topicKey(topic, ctx)) : null;
+        const saved = byId || await KBdb.getMapping(topic);
         if (saved && saved.youtube) return wrapSaved(saved, topic);
       } catch (e) { LOG('db read failed', e); }
     }

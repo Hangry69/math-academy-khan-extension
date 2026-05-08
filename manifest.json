@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Khan Academy Video for Math Academy",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "description": "One-click Khan Academy video for the topic you're working on. Loads in-page on Math Academy. Learns from your overrides — bad guesses become good ones. Optional YouTube API for live search.",
   "permissions": ["activeTab", "storage", "scripting"],
   "host_permissions": ["https://www.googleapis.com/*"],

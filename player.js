@@ -37,17 +37,21 @@
   document.body.appendChild(iframe);
 
   // YouTube IFrame API messages arrive as JSON-stringified objects.
+  // Origin check: only trust messages from the YouTube embed iframe — any
+  // page can postMessage and we don't want to spoof an error/ready signal.
   window.addEventListener('message', (e) => {
+    if (e.source !== iframe.contentWindow) return;
     if (!e.data) return;
     let data;
     try { data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; } catch (err) { return; }
     if (!data) return;
     // The IFrame API sends { event: 'onError', info: <code> } and
-    // { event: 'onReady' }. We forward errors to the parent and try to
-    // kick off playback in case autoplay was blocked.
+    // { event: 'onReady' }. Forward both: parent uses onReady to know the
+    // player is actually playable (not just that the shell loaded).
     if (data.event === 'onError') {
       post({ type: 'error', reason: 'yt-error', code: data.info, yt });
     } else if (data.event === 'onReady') {
+      post({ type: 'ready', yt });
       try {
         iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*');
       } catch (err) {}
