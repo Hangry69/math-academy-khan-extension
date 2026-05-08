@@ -536,7 +536,50 @@ function findBestTopicMatch(searchTerm) {
   return null;
 }
 
+// Find topics related to the given search term — returns up to `count`
+// keys from the map, ranked by word overlap, excluding the best match.
+function findRelatedTopics(searchTerm, count) {
+  count = count || 4;
+  const normalized = (searchTerm || '').toLowerCase().trim();
+  if (!normalized) return [];
+  const stripped = normalized
+    .replace(/\b(introduction to|intro to|basics of|basic|understanding|review of|the|an?|of|in|for|with|and)\b/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+  const searchWords = stripped.split(/\s+/).filter((w) => w.length > 2);
+  if (!searchWords.length) return [];
+
+  const scored = [];
+  for (const [key, value] of Object.entries(KHAN_TOPIC_MAP)) {
+    if (key === normalized || key === stripped) continue;
+    if (!value.youtube) continue; // only suggest topics that have a video
+    const keyWords = key.split(/\s+/);
+    let score = 0;
+    let hits = 0;
+    for (const sw of searchWords) {
+      for (const kw of keyWords) {
+        if (sw === kw) { score += 5; hits++; break; }
+        if (sw.length > 3 && kw.length > 3 && (sw.includes(kw) || kw.includes(sw))) { score += 2; hits++; break; }
+      }
+    }
+    if (!hits) continue;
+    // prefer concise keys (less specific phrasing tends to be more parent-y)
+    score -= Math.max(0, keyWords.length - searchWords.length) * 0.5;
+    scored.push({ key, value, score });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  // dedupe by youtube id so we don't show 5 chips that all play the same video
+  const seen = new Set();
+  const out = [];
+  for (const s of scored) {
+    if (seen.has(s.value.youtube)) continue;
+    seen.add(s.value.youtube);
+    out.push({ topic: s.key, title: s.value.title, youtube: s.value.youtube });
+    if (out.length >= count) break;
+  }
+  return out;
+}
+
 // Make available to other scripts
 if (typeof module !== 'undefined') {
-  module.exports = { KHAN_TOPIC_MAP, findBestTopicMatch };
+  module.exports = { KHAN_TOPIC_MAP, findBestTopicMatch, findRelatedTopics };
 }

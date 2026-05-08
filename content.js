@@ -268,6 +268,19 @@
           <a class="kb-btn ${ytWatch ? 'kb-btn-ghost' : 'kb-btn-primary'}" href="${escapeHtml(khanUrl)}" target="_blank" rel="noopener">Open on Khan Academy</a>
           <button type="button" class="kb-btn kb-btn-ghost" id="kb-wrong">Wrong video?</button>
         </div>
+        ${(() => {
+          if (videoData?.loading || !topic) return '';
+          let related = [];
+          try { related = (typeof findRelatedTopics === 'function') ? findRelatedTopics(topic, 4) : []; } catch (e) {}
+          if (!related.length) return '';
+          return `
+            <div class="kb-related">
+              <div class="kb-related-label">Related</div>
+              <div class="kb-related-chips">
+                ${related.map((r) => `<button type="button" class="kb-chip" data-topic="${escapeHtml(r.topic)}">${escapeHtml(r.title || r.topic)}</button>`).join('')}
+              </div>
+            </div>`;
+        })()}
         <div class="kb-override" id="kb-override" hidden>
           <div class="kb-override-help">
             Paste a YouTube URL or 11-character video ID. We'll save it for
@@ -347,6 +360,15 @@
         }
       });
     }
+
+    // Related-topic chips: clicking one re-resolves to that topic.
+    wrap.querySelectorAll('.kb-chip').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const t = chip.dataset.topic;
+        if (!t || typeof window.__kbShowVideo !== 'function') return;
+        window.__kbShowVideo(t);
+      });
+    });
 
     if (yt) attachIframeErrorHandling(wrap, topic, ytSearch, khanUrl);
   }
@@ -700,6 +722,36 @@
     #khan-booster-overlay .kb-override-msg[hidden] { display: none !important; }
     #khan-booster-overlay .kb-msg-ok { background: rgba(20,191,150,0.15) !important; color: #14BF96 !important; }
     #khan-booster-overlay .kb-msg-err { background: rgba(245,158,11,0.18) !important; color: #f59e0b !important; }
+
+    #khan-booster-overlay .kb-related {
+      padding: 12px 18px 16px !important;
+      border-top: 1px solid rgba(255,255,255,0.06) !important;
+      display: flex !important; flex-direction: column !important; gap: 8px !important;
+    }
+    #khan-booster-overlay .kb-related-label {
+      font-size: 10px !important; font-weight: 700 !important;
+      letter-spacing: 0.6px !important; text-transform: uppercase !important;
+      color: #6b6b80 !important;
+    }
+    #khan-booster-overlay .kb-related-chips {
+      display: flex !important; flex-wrap: wrap !important; gap: 6px !important;
+    }
+    #khan-booster-overlay .kb-chip {
+      padding: 6px 11px !important;
+      background: rgba(255,255,255,0.04) !important;
+      border: 1px solid rgba(255,255,255,0.08) !important;
+      color: #c9cce0 !important;
+      border-radius: 999px !important;
+      font-family: inherit !important;
+      font-size: 11px !important; font-weight: 600 !important;
+      cursor: pointer !important;
+      transition: background 0.15s, border-color 0.15s !important;
+    }
+    #khan-booster-overlay .kb-chip:hover {
+      background: rgba(20,191,150,0.12) !important;
+      border-color: rgba(20,191,150,0.3) !important;
+      color: #14BF96 !important;
+    }
 
     #kb-side-btn {
       position: fixed !important;
