@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Khan Academy Video Booster</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: auto; }
+    body {
+      width: 400px;
+      max-height: 600px;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #11142a;
+      color: #e6e7f2;
+      display: flex; flex-direction: column;
+    }
+
+    .header {
+      display: flex; align-items: center; gap: 10px;
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      background: linear-gradient(135deg, rgba(20,191,150,0.08), rgba(14,165,233,0.08));
+    }
+    .header h1 {
+      font-size: 14px; font-weight: 700;
+      background: linear-gradient(135deg, #14BF96, #0ea5e9);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      line-height: 1.1;
+    }
+    .header p { font-size: 10px; color: #6b6b80; margin-top: 2px; }
+    .header .ver { margin-left: auto; font-size: 9px; color: #4a4a5e; letter-spacing: 0.6px; text-transform: uppercase; }
+
+    .tabs {
+      display: flex; gap: 0;
+      padding: 0 8px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      background: rgba(0,0,0,0.18);
+    }
+    .tab {
+      flex: 1;
+      padding: 10px 6px;
+      background: transparent; border: none; color: #6b6b80;
+      font-family: inherit; font-size: 11px; font-weight: 700; letter-spacing: 0.4px;
+      text-transform: uppercase;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      display: flex; align-items: center; justify-content: center; gap: 5px;
+    }
+    .tab .count {
+      font-size: 9px; padding: 1px 5px; border-radius: 8px;
+      background: rgba(255,255,255,0.08); color: #c9cce0;
+    }
+    .tab:hover { color: #c9cce0; }
+    .tab.active { color: #14BF96; border-bottom-color: #14BF96; }
+    .tab.active .count { background: rgba(20,191,150,0.2); color: #14BF96; }
+
+    .panel { display: none; padding: 14px 16px; flex-direction: column; gap: 12px; overflow-y: auto; max-height: 460px; }
+    .panel.active { display: flex; }
+    .panel::-webkit-scrollbar { width: 6px; }
+    .panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+
+    .stat-row {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+    }
+    .stat {
+      padding: 8px 10px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 8px;
+      text-align: center;
+    }
+    .stat .num {
+      font-size: 18px; font-weight: 800;
+      background: linear-gradient(135deg, #14BF96, #0ea5e9);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .stat .lbl { font-size: 9px; color: #6b6b80; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+
+    .open-btn {
+      width: 100%;
+      padding: 13px 16px;
+      background: linear-gradient(135deg, #14BF96, #0ea5e9);
+      color: white; border: none;
+      border-radius: 12px;
+      font-size: 14px; font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      box-shadow: 0 4px 14px rgba(14,165,233,0.25);
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .open-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(14,165,233,0.35); }
+    .open-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
+
+    .status { font-size: 12px; color: #8a8fae; text-align: center; min-height: 16px; }
+    .status strong { color: #14BF96; }
+    .status .warn { color: #f59e0b; }
+
+    .topic-row { display: flex; gap: 6px; }
+    .topic-row input {
+      flex: 1;
+      padding: 9px 11px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 9px;
+      color: #e6e7f2; font-size: 12px; font-family: inherit; outline: none;
+    }
+    .topic-row input::placeholder { color: #4a4a5e; }
+    .topic-row input:focus { border-color: #14BF96; }
+
+    .toggle-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 9px 12px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 9px;
+    }
+    .toggle-row span { font-size: 12px; color: #c9cce0; }
+
+    .toggle-switch { position: relative; width: 36px; height: 20px; }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider {
+      position: absolute; cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(255,255,255,0.1);
+      border-radius: 10px; transition: 0.2s;
+    }
+    .toggle-slider::before {
+      content: ""; position: absolute;
+      height: 14px; width: 14px; left: 3px; bottom: 3px;
+      background: white; border-radius: 50%; transition: 0.2s;
+    }
+    .toggle-switch input:checked + .toggle-slider { background: #14BF96; }
+    .toggle-switch input:checked + .toggle-slider::before { transform: translateX(16px); }
+
+    .api-section {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 9px;
+      padding: 10px 12px;
+    }
+    .api-head {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .api-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 700; color: #a0a0b8; }
+    .api-status { font-size: 9px; padding: 2px 7px; border-radius: 999px; font-weight: 700; }
+    .api-status.set { background: rgba(20,191,150,0.15); color: #14BF96; }
+    .api-status.unset { background: rgba(245,158,11,0.15); color: #f59e0b; }
+    .api-row { display: flex; gap: 5px; }
+    .api-row input {
+      flex: 1; padding: 7px 9px;
+      background: rgba(0,0,0,0.25);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 7px;
+      color: #e6e7f2; font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; outline: none;
+    }
+    .api-row input:focus { border-color: #14BF96; }
+    .api-row button {
+      padding: 7px 12px;
+      background: rgba(20,191,150,0.15);
+      color: #14BF96;
+      border: 1px solid rgba(20,191,150,0.25);
+      border-radius: 7px;
+      font-size: 10px; font-weight: 700; cursor: pointer; font-family: inherit;
+    }
+    .api-row button:hover { background: rgba(20,191,150,0.25); }
+    .api-help { font-size: 10px; color: #6b6b80; margin-top: 7px; line-height: 1.5; }
+    .api-help a { color: #14BF96; text-decoration: none; }
+    .api-help a:hover { text-decoration: underline; }
+
+    /* List items (saved + history) */
+    .list-empty {
+      padding: 24px 12px;
+      text-align: center;
+      color: #6b6b80;
+      font-size: 12px;
+      border: 1px dashed rgba(255,255,255,0.08);
+      border-radius: 10px;
+    }
+    .list-empty strong { color: #c9cce0; display: block; margin-bottom: 4px; font-size: 13px; }
+
+    .list { display: flex; flex-direction: column; gap: 6px; }
+    .item {
+      padding: 9px 11px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 9px;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .item:hover { background: rgba(255,255,255,0.05); }
+    .item-row1 { display: flex; align-items: center; gap: 6px; }
+    .item-topic {
+      flex: 1; font-size: 12px; font-weight: 700; color: #e6e7f2;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .item-badge {
+      font-size: 9px; padding: 1px 6px; border-radius: 999px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.4px;
+    }
+    .badge-user { background: rgba(20,191,150,0.18); color: #14BF96; }
+    .badge-yt { background: rgba(14,165,233,0.18); color: #0ea5e9; }
+    .badge-local { background: rgba(255,255,255,0.06); color: #9aa0bf; }
+
+    .item-row2 {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 10px; color: #6b6b80;
+    }
+    .item-row2 a { color: #6b8aff; text-decoration: none; }
+    .item-row2 a:hover { text-decoration: underline; }
+    .item-row2 .spacer { flex: 1; }
+    .item-btn {
+      background: transparent; border: none; padding: 0;
+      color: #f59e7a; font-size: 10px; font-weight: 600; cursor: pointer; font-family: inherit;
+    }
+    .item-btn:hover { color: #f97e58; text-decoration: underline; }
+
+    .panel-actions {
+      display: flex; gap: 6px; padding-top: 4px;
+    }
+    .panel-actions button {
+      flex: 1;
+      padding: 7px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+      color: #c9cce0;
+      border-radius: 7px;
+      font-size: 10px; font-weight: 700; cursor: pointer; font-family: inherit;
+      letter-spacing: 0.4px; text-transform: uppercase;
+    }
+    .panel-actions button:hover { background: rgba(255,255,255,0.06); color: #fff; }
+    .panel-actions button.danger { color: #f59e7a; }
+    .panel-actions button.danger:hover { background: rgba(245,158,11,0.1); color: #f97e58; }
+
+    .footer {
+      padding: 8px 16px 10px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      display: flex; gap: 12px; justify-content: center;
+    }
+    .footer a { color: #6b6b80; text-decoration: none; font-size: 10px; font-weight: 600; }
+    .footer a:hover { color: #14BF96; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="11" fill="#14BF96" stroke="#0a9b7a" stroke-width="1"/>
+      <path d="M10 8l6 4-6 4V8z" fill="white"/>
+    </svg>
+    <div>
+      <h1>Khan Academy Video</h1>
+      <p>Your saved overrides win every time.</p>
+    </div>
+    <span class="ver" id="ver">v4.0</span>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="now">Now</button>
+    <button class="tab" data-tab="saved">Saved <span class="count" id="saved-count">0</span></button>
+    <button class="tab" data-tab="history">History <span class="count" id="history-count">0</span></button>
+    <button class="tab" data-tab="settings">Settings</button>
+  </div>
+
+  <!-- NOW -->
+  <div class="panel active" id="panel-now">
+    <div class="stat-row">
+      <div class="stat"><div class="num" id="stat-today">0</div><div class="lbl">Today</div></div>
+      <div class="stat"><div class="num" id="stat-total">0</div><div class="lbl">All-Time</div></div>
+      <div class="stat"><div class="num" id="stat-saved">0</div><div class="lbl">Saved</div></div>
+    </div>
+
+    <button id="open-khan-video" class="open-btn">
+      <span>&#9654;</span>
+      <span>Play Khan video here</span>
+    </button>
+    <div class="status" id="status">Detecting topic&hellip;</div>
+
+    <div class="topic-row">
+      <input type="text" id="topic-override" placeholder="Or type a topic (e.g. fractions)">
+    </div>
+
+    <div class="toggle-row">
+      <span>Extension enabled</span>
+      <label class="toggle-switch">
+        <input type="checkbox" id="toggle-enabled" checked>
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <!-- SAVED -->
+  <div class="panel" id="panel-saved">
+    <div id="saved-list"></div>
+    <div class="panel-actions">
+      <button id="export-btn">Export JSON</button>
+      <button id="clear-saved-btn" class="danger">Clear all saved</button>
+    </div>
+  </div>
+
+  <!-- HISTORY -->
+  <div class="panel" id="panel-history">
+    <div id="history-list"></div>
+    <div class="panel-actions">
+      <button id="clear-history-btn" class="danger">Clear history</button>
+    </div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div class="panel" id="panel-settings">
+    <div class="api-section">
+      <div class="api-head">
+        <span class="api-label">YouTube API Key</span>
+        <span class="api-status unset" id="api-status">Not set</span>
+      </div>
+      <div class="api-row">
+        <input type="password" id="api-key" placeholder="AIza&hellip;" autocomplete="off" spellcheck="false">
+        <button id="save-key">Save</button>
+      </div>
+      <div class="api-help">
+        Without a key, only the built-in topic list works. With one, we search Khan Academy's official YouTube channel for any topic — and cache successful hits locally so you don't burn quota twice.
+        <br><a href="https://console.cloud.google.com/apis/credentials" target="_blank">Get a free API key &rarr;</a>
+      </div>
+    </div>
+    <div class="toggle-row">
+      <span>Extension enabled</span>
+      <label class="toggle-switch">
+        <input type="checkbox" id="toggle-enabled-2" checked>
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <div class="footer">
+    <a href="https://www.khanacademy.org/math" target="_blank">Khan Academy</a>
+    <a href="#" id="reload-link">Reload data</a>
+  </div>
+
+  <script src="db.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
