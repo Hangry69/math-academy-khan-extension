@@ -200,10 +200,19 @@
   // ── Overlay ─────────────────────────────────────────────────
   function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
 
+  // Tracks the postMessage handler attached to the currently-open overlay
+  // so we can remove it cleanly on close (otherwise stacked listeners
+  // would all fire for any postMessage and re-trigger error handling).
+  let currentPlayerMsgHandler = null;
+
   function closeOverlay() {
     const ex = document.getElementById('khan-booster-overlay');
     if (ex) ex.remove();
     document.removeEventListener('keydown', escHandler);
+    if (currentPlayerMsgHandler) {
+      window.removeEventListener('message', currentPlayerMsgHandler);
+      currentPlayerMsgHandler = null;
+    }
   }
 
   function escHandler(e) { if (e.key === 'Escape') closeOverlay(); }
@@ -233,6 +242,19 @@
     const badge = (yt && !videoData?.loading) ? sourceBadge(videoData?.source) : null;
     const badgeHtml = badge ? `<span class="kb-badge ${badge.cls}">${escapeHtml(badge.text)}</span>` : '';
 
+    // Use the bundled player.html as the iframe src so we get postMessage
+    // error events back from YouTube (embed-disabled videos return code
+    // 101/150, removed videos return 100). Falling back to a direct embed
+    // if chrome.runtime isn't available (e.g. file:// test page).
+    let playerUrl = '';
+    if (yt) {
+      try {
+        playerUrl = chrome.runtime.getURL('player.html') + '?yt=' + encodeURIComponent(yt);
+      } catch (e) {
+        playerUrl = `https://www.youtube.com/embed/${encodeURIComponent(yt)}?rel=0&modestbranding=1&autoplay=1&playsinline=1`;
+      }
+    }
+
     wrap.innerHTML = `
       <div class="kb-backdrop"></div>
       <div class="kb-modal" role="dialog" aria-modal="true" aria-label="Khan Academy video">
@@ -247,7 +269,7 @@
         <div class="kb-video">
           ${yt
             ? `<iframe id="kb-iframe"
-                  src="https://www.youtube.com/embed/${encodeURIComponent(yt)}?rel=0&modestbranding=1&autoplay=1&playsinline=1"
+                  src="${escapeHtml(playerUrl)}"
                   frameborder="0"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                   referrerpolicy="strict-origin-when-cross-origin"
@@ -374,27 +396,93 @@
   }
 
   // ── Iframe load / timeout handling ──────────────────────────
+  // We listen for postMessage events from player.html (which forwards
+  // YouTube IFrame API onError codes). Codes worth knowing:
+  //   2   — invalid video ID (we'd never send one of these)
+  //   5   — HTML5 player error
+  //   100 — video not found / removed
+  //   101 — embed disabled by uploader
+  //   150 — embed disabled (newer code, equivalent to 101)
+  // 101/150 are the common reason a Khan video won't play in our modal.
+  // For all error codes we try a "next best" video so the student isn't
+  // left staring at a blank box.
   function attachIframeErrorHandling(wrap, topic, ytSearch, khanUrl) {
     const iframe = wrap.querySelector('#kb-iframe');
     if (!iframe) return;
     let resolved = false;
+    let recovered = false;
 
-    const showFailure = (reason) => {
+    const tryRecovery = async (reason) => {
+      if (recovered) return false;
+      recovered = true;
+      // Depth cap: don't chain past 2 recoveries — if 3 videos in a row
+      // all refuse to embed, the topic is just unlucky and the user should
+      // see the override pane.
+      const depth = (videoData && videoData._recoveryDepth) || 0;
+      if (depth >= 2) { LOG('recovery depth cap hit'); return false; }
+      LOG('attempting recovery for', reason, 'depth=', depth);
+      let related = [];
+      try { related = (typeof findRelatedTopics === 'function') ? findRelatedTopics(topic, 6) : []; } catch (e) {}
+      // Skip the broken ID, plus anything we've already tried this chain.
+      const triedIds = new Set((videoData && videoData._triedIds) || []);
+      try { triedIds.add(yt); } catch (e) {}
+      const candidate = related.find((r) => r.youtube && !triedIds.has(r.youtube));
+      if (!candidate) return false;
+      triedIds.add(candidate.youtube);
+      LOG('recovering with related topic', candidate.topic, candidate.youtube);
+      showOverlay(topic, {
+        title: candidate.title || candidate.topic,
+        youtube: candidate.youtube,
+        video: khanUrl,
+        khanUrl: khanUrl,
+        searchUrl: ytSearch,
+        source: 'local-map',
+        _recoveryDepth: depth + 1,
+        _triedIds: Array.from(triedIds),
+      });
+      return true;
+    };
+
+    const showFailure = async (reason, code) => {
       if (resolved) return;
       resolved = true;
-      LOG('iframe failed:', reason);
+      LOG('iframe failed:', reason, code);
+      // First try to silently recover with a related topic.
+      if (await tryRecovery(reason)) return;
       const videoBox = wrap.querySelector('.kb-video');
       if (!videoBox) return;
+      const subline = code === 101 || code === 150
+        ? 'YouTube blocks this video from embedding. Open it on YouTube directly, or paste a different link below.'
+        : code === 100
+          ? 'YouTube can\'t find this video. It may have been removed.'
+          : 'It might be unavailable or blocked from embedding. Try the buttons below.';
       videoBox.innerHTML = `
         <div class="kb-empty">
           <p><strong>Couldn't load this video.</strong></p>
-          <p class="kb-empty-sub">It might be unavailable or blocked from embedding. Try the buttons below.</p>
+          <p class="kb-empty-sub">${escapeHtml(subline)}</p>
         </div>`;
+      // Auto-open the override pane so the student can paste a working link.
+      const op = wrap.querySelector('#kb-override');
+      const inp = wrap.querySelector('#kb-override-input');
+      if (op) op.hidden = false;
+      if (inp) inp.focus();
     };
 
+    // postMessage from our player.html (same-origin chrome-extension://).
+    // closeOverlay() will tear this down via currentPlayerMsgHandler.
+    const onMsg = (e) => {
+      const d = e && e.data;
+      if (!d || d.source !== 'kb-player') return;
+      if (d.type === 'loaded') { resolved = true; LOG('player loaded', d.yt); }
+      if (d.type === 'error') showFailure(d.reason || 'yt-error', d.code);
+    };
+    window.addEventListener('message', onMsg);
+    currentPlayerMsgHandler = onMsg;
+    // Also wire iframe-level events as backup.
     iframe.addEventListener('load', () => { resolved = true; LOG('iframe loaded'); });
     iframe.addEventListener('error', () => showFailure('iframe-error'));
-    setTimeout(() => { if (!resolved) showFailure('timeout'); }, 10000);
+    // Timeout: 12s is enough for YT player to either load or report error.
+    setTimeout(() => { if (!resolved) showFailure('timeout'); }, 12000);
   }
 
   // ── Public API for popup ────────────────────────────────────

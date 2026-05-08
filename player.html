@@ -16,52 +16,6 @@
   </style>
 </head>
 <body>
-<script>
-  (function () {
-    const params = new URLSearchParams(location.search);
-    const yt = (params.get('yt') || '').trim();
-    const post = (msg) => { try { parent.postMessage(Object.assign({ source: 'kb-player' }, msg), '*'); } catch (e) {} };
-
-    if (!yt || !/^[A-Za-z0-9_-]{6,}$/.test(yt)) {
-      document.body.innerHTML = '<div class="empty"><p>No video specified.</p></div>';
-      post({ type: 'error', reason: 'no-yt-id' });
-      return;
-    }
-
-    const iframe = document.createElement('iframe');
-    // enablejsapi=1 lets the YT player postMessage error/state events to us.
-    iframe.src = 'https://www.youtube-nocookie.com/embed/' + encodeURIComponent(yt) + '?rel=0&modestbranding=1&autoplay=1&playsinline=1&enablejsapi=1&origin=' + encodeURIComponent(location.origin);
-    iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
-    iframe.setAttribute('allowfullscreen', '');
-    iframe.addEventListener('load', () => post({ type: 'loaded', yt }));
-    document.body.appendChild(iframe);
-
-    // Listen for YT IFrame API messages from the embedded player
-    window.addEventListener('message', (e) => {
-      if (!e.data) return;
-      try {
-        const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
-        if (data && data.event === 'onError') {
-          // YouTube error codes: 2 (invalid id), 5 (HTML5 error), 100 (not found),
-          // 101 / 150 (embed disabled by owner)
-          post({ type: 'error', reason: 'yt-error', code: data.info, yt });
-        } else if (data && data.event === 'onReady') {
-          // Ask the player to start playing in case autoplay was blocked
-          try {
-            iframe.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*');
-          } catch (err) {}
-        }
-      } catch (err) {}
-    });
-
-    // Watchdog: if the iframe doesn't fire load within 8s, report failure.
-    setTimeout(() => {
-      if (!iframe.contentWindow || !iframe.contentDocument) {
-        // Heuristic — for cross-origin iframes contentDocument is null when unloaded.
-        // The load event will already have fired in normal cases. This is best-effort.
-      }
-    }, 8000);
-  })();
-</script>
+<script src="player.js"></script>
 </body>
 </html>
