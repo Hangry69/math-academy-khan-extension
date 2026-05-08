@@ -28,6 +28,10 @@
     '?rel=0&modestbranding=1&autoplay=1&playsinline=1&enablejsapi=1&origin=' +
     encodeURIComponent(location.origin);
   iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
+  // referrerpolicy guards against Chrome stripping the Referer header from
+  // extension iframes — without it, YouTube can return error 153 even for
+  // perfectly normal embeddable videos.
+  iframe.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
   iframe.setAttribute('allowfullscreen', '');
   iframe.addEventListener('load', () => post({ type: 'loaded', yt }));
   document.body.appendChild(iframe);
