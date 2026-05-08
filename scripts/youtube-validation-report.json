@@ -1,0 +1,40 @@
+{
+  "checkedAt": "2026-05-08T05:33:06.696Z",
+  "elapsedMs": 1174,
+  "totalIds": 90,
+  "okCount": 90,
+  "deadCount": 0,
+  "dead": [],
+  "sampleOk": [
+    {
+      "id": "AuX7nPBqDts",
+      "ok": true,
+      "title": "Basic addition | Addition and subtraction | Arithmetic | Khan Academy",
+      "author": "Khan Academy"
+    },
+    {
+      "id": "mvOkMYCygps",
+      "ok": true,
+      "title": "Basic multiplication | Multiplication and division | Arithmetic | Khan Academy",
+      "author": "Khan Academy"
+    },
+    {
+      "id": "MTzTqvzWzm8",
+      "ok": true,
+      "title": "Division 1 | Multiplication and division | Arithmetic | Khan Academy",
+      "author": "Khan Academy"
+    },
+    {
+      "id": "cLP7INqs3JM",
+      "ok": true,
+      "title": "Introduction to rational and irrational numbers | Algebra I | Khan Academy",
+      "author": "Khan Academy"
+    },
+    {
+      "id": "52ZlXsFJULI",
+      "ok": true,
+      "title": "Adding and subtracting fractions | Fractions | Pre-Algebra | Khan Academy",
+      "author": "Khan Academy"
+    }
+  ]
+}
