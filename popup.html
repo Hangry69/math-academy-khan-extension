@@ -97,6 +97,7 @@
     .status strong { color: #14BF96; }
     .status .warn { color: #f59e0b; }
 
+    .topic-wrap { position: relative; }
     .topic-row { display: flex; gap: 6px; }
     .topic-row input {
       flex: 1;
@@ -108,6 +109,34 @@
     }
     .topic-row input::placeholder { color: #4a4a5e; }
     .topic-row input:focus { border-color: #14BF96; }
+    .suggestions {
+      position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+      background: #181c36;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 9px;
+      max-height: 200px; overflow-y: auto;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.5);
+      z-index: 10;
+      display: none;
+    }
+    .suggestions.open { display: block; }
+    .suggestion {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 11px;
+      cursor: pointer;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    .suggestion:last-child { border-bottom: none; }
+    .suggestion:hover, .suggestion.focused { background: rgba(20,191,150,0.08); }
+    .suggestion-text { font-size: 12px; color: #e6e7f2; }
+    .suggestion-tag {
+      font-size: 9px; color: #6b6b80;
+      padding: 1px 6px; border-radius: 999px;
+      background: rgba(255,255,255,0.04);
+      text-transform: uppercase; letter-spacing: 0.4px; font-weight: 700;
+    }
+    .suggestion-tag.user { background: rgba(20,191,150,0.18); color: #14BF96; }
+    .suggestion-tag.history { background: rgba(14,165,233,0.12); color: #6b8aff; }
 
     .toggle-row {
       display: flex; align-items: center; justify-content: space-between;
@@ -276,8 +305,11 @@
     </button>
     <div class="status" id="status">Detecting topic&hellip;</div>
 
-    <div class="topic-row">
-      <input type="text" id="topic-override" placeholder="Or type a topic (e.g. fractions)">
+    <div class="topic-wrap">
+      <div class="topic-row">
+        <input type="text" id="topic-override" placeholder="Or type a topic (e.g. fractions)" autocomplete="off">
+      </div>
+      <div class="suggestions" id="suggestions"></div>
     </div>
 
     <div class="toggle-row">
@@ -336,6 +368,7 @@
     <a href="#" id="reload-link">Reload data</a>
   </div>
 
+  <script src="khan-topics.js"></script>
   <script src="db.js"></script>
   <script src="popup.js"></script>
 </body>

@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Khan Booster — Local Test Harness</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0d0f23; color: #e6e7f2;
+      padding: 40px 32px 100px;
+      max-width: 820px;
+      margin-left: auto; margin-right: auto;
+    }
+    h1 {
+      font-size: 22px; margin-bottom: 6px;
+      background: linear-gradient(135deg, #14BF96, #0ea5e9);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .sub { color: #6b6b80; margin-bottom: 30px; font-size: 13px; }
+    .card {
+      padding: 18px 20px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 12px;
+      margin-bottom: 14px;
+    }
+    .lesson-title {
+      font-size: 18px; font-weight: 700; color: #e6e7f2; margin-bottom: 4px;
+    }
+    .objective { font-size: 13px; color: #8a8fae; }
+    .topic-pills {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      margin-top: 30px;
+    }
+    button.pill {
+      padding: 8px 14px;
+      background: rgba(20,191,150,0.08);
+      border: 1px solid rgba(20,191,150,0.2);
+      color: #14BF96;
+      border-radius: 999px;
+      font-family: inherit; font-size: 12px; cursor: pointer;
+    }
+    button.pill:hover { background: rgba(20,191,150,0.14); }
+    .note {
+      margin-top: 30px;
+      padding: 14px 16px;
+      background: rgba(245,158,11,0.08);
+      border: 1px solid rgba(245,158,11,0.2);
+      border-radius: 10px;
+      color: #f59e0b;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+  </style>
+</head>
+<body>
+  <h1>Khan Booster — Local Test Harness</h1>
+  <p class="sub">
+    This page mimics the markup the content script looks for on mathacademy.com,
+    so you can iterate on the extension without an active Math Academy session.
+    Click the side button (bottom right) or press <strong>Alt+K</strong>.
+  </p>
+
+  <div class="card">
+    <div class="lesson-title" data-task-name="Solving Linear Equations in One Variable">Solving Linear Equations in One Variable</div>
+    <div class="objective">Goal: isolate x using inverse operations on both sides.</div>
+  </div>
+
+  <div class="card">
+    <div class="lesson-title">Vertex Form of a Quadratic</div>
+    <div class="objective">Convert standard form to vertex form via completing the square.</div>
+  </div>
+
+  <p class="sub" style="margin-top: 24px;">Or pick any topic to override:</p>
+  <div class="topic-pills">
+    <button class="pill" data-topic="fractions">fractions</button>
+    <button class="pill" data-topic="quadratic formula">quadratic formula</button>
+    <button class="pill" data-topic="pythagorean theorem">pythagorean theorem</button>
+    <button class="pill" data-topic="derivatives">derivatives</button>
+    <button class="pill" data-topic="taylor series">taylor series</button>
+    <button class="pill" data-topic="completely made up topic xyz">unknown topic xyz</button>
+  </div>
+
+  <div class="note">
+    The extension's content script is gated to <code>*://*.mathacademy.com/*</code>
+    in <code>manifest.json</code>. To exercise this page, temporarily add
+    <code>"file://*/*"</code> to the matches list (or open this file via
+    <code>chrome-extension://&lt;id&gt;/test.html</code> and the manifest
+    won't match — for that case, see the inline loader at the bottom which
+    boots khan-topics + db + content directly).
+  </div>
+
+  <!-- When opened via chrome-extension:// the manifest content_script
+       matches won't apply, so we boot the same scripts inline. -->
+  <script src="khan-topics.js"></script>
+  <script src="db.js"></script>
+  <script src="content.js"></script>
+
+  <script>
+    // Wire the topic pills: writing into a data-topic on a visible element
+    // is enough — the content script's MutationObserver picks it up.
+    document.querySelectorAll('button.pill').forEach((b) => {
+      b.addEventListener('click', () => {
+        const t = b.dataset.topic;
+        if (!t) return;
+        if (typeof window.__kbShowVideo === 'function') window.__kbShowVideo(t);
+      });
+    });
+  </script>
+</body>
+</html>

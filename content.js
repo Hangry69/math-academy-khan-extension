@@ -169,6 +169,13 @@
     };
   }
 
+  // Translate an internal source code into a friendly badge.
+  function sourceBadge(source) {
+    if (source === 'user') return { text: 'Your pick', cls: 'kb-badge-user' };
+    if (source === 'youtube-api' || source === 'saved') return { text: 'YT cache', cls: 'kb-badge-yt' };
+    return { text: 'Built-in', cls: 'kb-badge-local' };
+  }
+
   // Parse a YouTube URL or raw video ID into an 11-char video ID.
   function parseYouTubeId(input) {
     if (!input) return null;
@@ -223,6 +230,9 @@
 
     const wrap = document.createElement('div');
     wrap.id = 'khan-booster-overlay';
+    const badge = (yt && !videoData?.loading) ? sourceBadge(videoData?.source) : null;
+    const badgeHtml = badge ? `<span class="kb-badge ${badge.cls}">${escapeHtml(badge.text)}</span>` : '';
+
     wrap.innerHTML = `
       <div class="kb-backdrop"></div>
       <div class="kb-modal" role="dialog" aria-modal="true" aria-label="Khan Academy video">
@@ -230,6 +240,7 @@
           <div class="kb-title">
             <span class="kb-dot"></span>
             <span class="kb-topic">${escapeHtml(title)}</span>
+            ${badgeHtml}
           </div>
           <button class="kb-close" id="kb-close" aria-label="Close">&times;</button>
         </div>
@@ -402,6 +413,7 @@
       video: (local && local.video) || `https://www.khanacademy.org/search?page_search_query=${encodeURIComponent(topic)}`,
       khanUrl: (local && local.khanUrl) || `https://www.khanacademy.org/search?page_search_query=${encodeURIComponent(topic)}`,
       searchUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent('khan academy ' + topic)}`,
+      source: 'youtube-api',
     };
   }
 
@@ -497,6 +509,7 @@
     btn.id = 'kb-side-btn';
     btn.type = 'button';
     btn.setAttribute('aria-label', 'Play Khan Academy video for this topic');
+    btn.setAttribute('title', 'Play Khan Academy video (Alt+K)');
     btn.innerHTML = `
       <span class="kb-side-icon">&#9654;</span>
       <span class="kb-side-label">Play Video</span>
@@ -514,6 +527,19 @@
     if (target.id === 'kb-side-btn' || (target.closest && target.closest('#kb-side-btn'))) {
       handleSideClick(e);
     }
+  }, true);
+
+  // Keyboard shortcut: Alt+K to open the video overlay for the current
+  // detected topic. Skipped while typing in inputs/contenteditables.
+  document.addEventListener('keydown', (e) => {
+    if (!extensionEnabled) return;
+    if (!e.altKey || e.metaKey || e.ctrlKey) return;
+    if ((e.key || '').toLowerCase() !== 'k') return;
+    const ae = document.activeElement;
+    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    handleSideClick(e);
   }, true);
 
   function syncSideButton() {
@@ -599,7 +625,17 @@
       border-bottom: 1px solid rgba(255,255,255,0.06) !important;
       background: linear-gradient(135deg, rgba(20,191,150,0.08), rgba(14,165,233,0.08)) !important;
     }
-    #khan-booster-overlay .kb-title { display: flex !important; align-items: center !important; gap: 10px !important; font-weight: 700 !important; font-size: 15px !important; color: #e6e7f2 !important; }
+    #khan-booster-overlay .kb-title { display: flex !important; align-items: center !important; gap: 10px !important; font-weight: 700 !important; font-size: 15px !important; color: #e6e7f2 !important; flex: 1 !important; min-width: 0 !important; }
+    #khan-booster-overlay .kb-topic { white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; }
+    #khan-booster-overlay .kb-badge {
+      flex: 0 0 auto !important;
+      font-size: 10px !important; font-weight: 700 !important;
+      padding: 3px 8px !important; border-radius: 999px !important;
+      letter-spacing: 0.4px !important; text-transform: uppercase !important;
+    }
+    #khan-booster-overlay .kb-badge-user { background: rgba(20,191,150,0.18) !important; color: #14BF96 !important; }
+    #khan-booster-overlay .kb-badge-yt { background: rgba(14,165,233,0.18) !important; color: #0ea5e9 !important; }
+    #khan-booster-overlay .kb-badge-local { background: rgba(255,255,255,0.06) !important; color: #9aa0bf !important; }
     #khan-booster-overlay .kb-dot { width: 10px !important; height: 10px !important; border-radius: 50% !important; background: linear-gradient(135deg,#14BF96,#0ea5e9) !important; box-shadow: 0 0 12px rgba(20,191,150,0.5) !important; }
     #khan-booster-overlay .kb-close { background: transparent !important; border: none !important; color: #9aa0bf !important; font-size: 28px !important; line-height: 1 !important; cursor: pointer !important; padding: 0 6px !important; }
     #khan-booster-overlay .kb-close:hover { color: #fff !important; }

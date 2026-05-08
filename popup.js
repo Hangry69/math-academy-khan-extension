@@ -123,8 +123,114 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  // Autocomplete ───────────────────────────────────────────────
+  const suggestionsBox = document.getElementById('suggestions');
+  let suggestionPool = null; // lazy-built list of all candidate topics
+  let focusedSuggestion = -1;
+
+  async function buildSuggestionPool() {
+    const pool = new Map(); // key (lowercased) → { topic, kind }
+    // saved overrides first (highest signal)
+    try {
+      const saved = await KBdb.listMappings();
+      saved.forEach((m) => { if (m.topic) pool.set(m.topic, { topic: m.topic, kind: 'user' }); });
+    } catch (e) {}
+    // history next
+    try {
+      const hist = await KBdb.listHistory(80);
+      hist.forEach((h) => { if (h.topic && !pool.has(h.topic.toLowerCase())) pool.set(h.topic.toLowerCase(), { topic: h.topic, kind: 'history' }); });
+    } catch (e) {}
+    // built-in topic map last
+    if (typeof KHAN_TOPIC_MAP === 'object') {
+      Object.keys(KHAN_TOPIC_MAP).forEach((k) => { if (!pool.has(k)) pool.set(k, { topic: k, kind: 'builtin' }); });
+    }
+    return Array.from(pool.values());
+  }
+
+  function rankSuggestions(query, pool) {
+    const q = query.toLowerCase().trim();
+    if (!q) return pool.filter((p) => p.kind !== 'builtin').slice(0, 8);
+    const scored = [];
+    for (const item of pool) {
+      const t = item.topic.toLowerCase();
+      let score = 0;
+      if (t === q) score = 100;
+      else if (t.startsWith(q)) score = 60;
+      else if (t.includes(' ' + q)) score = 45;
+      else if (t.includes(q)) score = 30;
+      else {
+        // word-overlap fallback: any q-word starts a t-word
+        const qw = q.split(/\s+/).filter(Boolean);
+        const tw = t.split(/\s+/);
+        let hits = 0;
+        for (const w of qw) if (tw.some((tt) => tt.startsWith(w))) hits++;
+        if (hits) score = 10 + hits * 4;
+      }
+      if (score === 0) continue;
+      // boost saved & history above built-in
+      if (item.kind === 'user') score += 12;
+      else if (item.kind === 'history') score += 6;
+      // shorter exact-ish matches first
+      score -= Math.min(8, Math.max(0, t.length - q.length) / 4);
+      scored.push({ item, score });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, 8).map((s) => s.item);
+  }
+
+  async function renderSuggestions() {
+    if (!suggestionPool) suggestionPool = await buildSuggestionPool();
+    const items = rankSuggestions(topicInput.value, suggestionPool);
+    if (!items.length) { suggestionsBox.classList.remove('open'); suggestionsBox.innerHTML = ''; return; }
+    suggestionsBox.innerHTML = items.map((it, i) => {
+      const tag = it.kind === 'user'
+        ? `<span class="suggestion-tag user">Saved</span>`
+        : it.kind === 'history'
+          ? `<span class="suggestion-tag history">Recent</span>`
+          : '';
+      return `<div class="suggestion" data-i="${i}" data-topic="${escapeAttr(it.topic)}">
+        <span class="suggestion-text">${escapeHtml(it.topic)}</span>${tag}
+      </div>`;
+    }).join('');
+    suggestionsBox.classList.add('open');
+    focusedSuggestion = -1;
+    suggestionsBox.querySelectorAll('.suggestion').forEach((el) => {
+      el.addEventListener('mousedown', (ev) => {
+        ev.preventDefault();
+        topicInput.value = el.dataset.topic || '';
+        suggestionsBox.classList.remove('open');
+        topicInput.focus();
+      });
+    });
+  }
+
+  topicInput.addEventListener('input', renderSuggestions);
+  topicInput.addEventListener('focus', renderSuggestions);
+  topicInput.addEventListener('blur', () => {
+    setTimeout(() => suggestionsBox.classList.remove('open'), 120);
+  });
   topicInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') openBtn.click();
+    const open = suggestionsBox.classList.contains('open');
+    const items = suggestionsBox.querySelectorAll('.suggestion');
+    if (open && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      e.preventDefault();
+      if (!items.length) return;
+      focusedSuggestion = Math.max(0, Math.min(items.length - 1,
+        focusedSuggestion + (e.key === 'ArrowDown' ? 1 : -1)));
+      items.forEach((el, i) => el.classList.toggle('focused', i === focusedSuggestion));
+      items[focusedSuggestion].scrollIntoView({ block: 'nearest' });
+      return;
+    }
+    if (e.key === 'Enter') {
+      if (open && focusedSuggestion >= 0 && items[focusedSuggestion]) {
+        e.preventDefault();
+        topicInput.value = items[focusedSuggestion].dataset.topic || '';
+        suggestionsBox.classList.remove('open');
+        return;
+      }
+      openBtn.click();
+    }
+    if (e.key === 'Escape') suggestionsBox.classList.remove('open');
   });
 
   // Saved tab actions ─────────────────────────────────────────

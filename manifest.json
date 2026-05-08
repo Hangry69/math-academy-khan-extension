@@ -27,8 +27,8 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["player.html"],
-      "matches": ["*://*.mathacademy.com/*"]
+      "resources": ["player.html", "test.html"],
+      "matches": ["*://*.mathacademy.com/*", "<all_urls>"]
     }
   ]
 }
