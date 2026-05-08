@@ -536,6 +536,64 @@ function findBestTopicMatch(searchTerm) {
   return null;
 }
 
+// Search the bundled Khan Academy video index (built from
+// tamnd/khanacademy-index) for a video whose title closely matches the
+// query. Returns a topic-shaped object compatible with KHAN_TOPIC_MAP,
+// or null if no confident match. KHAN_VIDEO_INDEX is provided by
+// khan-video-index.js when loaded.
+function findKhanByIndexTitle(searchTerm) {
+  if (typeof KHAN_VIDEO_INDEX === 'undefined' || !Array.isArray(KHAN_VIDEO_INDEX)) return null;
+  const q = (searchTerm || '').toLowerCase().trim();
+  if (q.length < 3) return null;
+  const stripped = q
+    .replace(/\b(introduction to|intro to|basics of|basic|understanding|review of|the|an?|of|in|for|with|and)\b/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+  const qWords = stripped.split(/\s+/).filter((w) => w.length > 2);
+  if (!qWords.length) return null;
+
+  let best = null;
+  let bestScore = 0;
+  for (const e of KHAN_VIDEO_INDEX) {
+    const t = (e.title || '').toLowerCase();
+    if (!t) continue;
+    let score = 0;
+    if (t === q || t === stripped) score = 100;
+    else if (t.startsWith(q + ' ') || t.startsWith(stripped + ' ')) score = 60;
+    else if (t.includes(' ' + q + ' ') || t.includes(' ' + stripped + ' ')) score = 45;
+    else if (t.includes(q) || t.includes(stripped)) score = 25;
+    else {
+      // Word overlap: every q-word that has a t-word starting with it
+      // scores. Require both sides to be ≥3 chars on prefix matches —
+      // otherwise single-letter title tokens like "a" or "z" can absorb
+      // arbitrary nonsense ("asdfqwerty" starts with "a" → false hit).
+      const tWords = t.split(/\s+/);
+      let hits = 0;
+      for (const qw of qWords) {
+        if (tWords.some((tw) => tw === qw)) hits += 2;
+        else if (qw.length >= 3 && tWords.some((tw) => tw.length >= 3 && (tw.startsWith(qw) || qw.startsWith(tw)))) hits += 1;
+      }
+      if (hits >= qWords.length) score = 12 + hits;
+      else if (hits >= 2) score = 6 + hits;
+    }
+    if (score === 0) continue;
+    // Penalty for very long titles when query is short — avoids latching
+    // onto a niche video when the user asked for a parent concept.
+    const tLen = t.split(/\s+/).length;
+    if (tLen > qWords.length + 4) score -= Math.min(8, (tLen - qWords.length) * 0.5);
+    if (score > bestScore) { bestScore = score; best = e; }
+  }
+  // Require a confident threshold so we don't return random matches.
+  if (!best || bestScore < 10) return null;
+  return {
+    title: best.title,
+    youtube: best.id,
+    video: 'https://www.youtube.com/watch?v=' + best.id,
+    khanUrl: 'https://www.youtube.com/watch?v=' + best.id,
+    searchUrl: 'https://www.youtube.com/results?search_query=' + encodeURIComponent('khan academy ' + searchTerm),
+    source: 'index',
+  };
+}
+
 // Find topics related to the given search term — returns up to `count`
 // keys from the map, ranked by word overlap, excluding the best match.
 function findRelatedTopics(searchTerm, count) {
@@ -581,5 +639,5 @@ function findRelatedTopics(searchTerm, count) {
 
 // Make available to other scripts
 if (typeof module !== 'undefined') {
-  module.exports = { KHAN_TOPIC_MAP, findBestTopicMatch, findRelatedTopics };
+  module.exports = { KHAN_TOPIC_MAP, findBestTopicMatch, findRelatedTopics, findKhanByIndexTitle };
 }

@@ -4,7 +4,12 @@
 // Exits 0 on all-pass, 1 if any case fails.
 
 const path = require('path');
-const { findBestTopicMatch, findRelatedTopics, KHAN_TOPIC_MAP } = require(
+// Load the video index FIRST and expose globally so khan-topics.js's
+// findKhanByIndexTitle can pick it up at call time.
+const { KHAN_VIDEO_INDEX } = require(path.join(__dirname, '..', 'khan-video-index.js'));
+global.KHAN_VIDEO_INDEX = KHAN_VIDEO_INDEX;
+
+const { findBestTopicMatch, findRelatedTopics, findKhanByIndexTitle, KHAN_TOPIC_MAP } = require(
   path.join(__dirname, '..', 'khan-topics.js')
 );
 
@@ -117,6 +122,29 @@ expect(`youtube ids are 11-char id format (${ytIds.length} non-null)`,
   badYt,
   (a) => a.length === 0,
   '0 malformed YT ids');
+
+// ── findKhanByIndexTitle ─────────────────────────────────────
+console.log('\nfindKhanByIndexTitle');
+
+expect(`KHAN_VIDEO_INDEX loaded (${KHAN_VIDEO_INDEX.length} entries)`,
+  KHAN_VIDEO_INDEX,
+  (a) => Array.isArray(a) && a.length > 1000);
+
+expect('hits a known topic ("Treating units algebraically")',
+  findKhanByIndexTitle('Treating units algebraically'),
+  (r) => r && /^[A-Za-z0-9_-]{11}$/.test(r.youtube));
+
+expect('returns null for nonsense',
+  findKhanByIndexTitle('asdfqwerty zxcvbn'),
+  (r) => r === null);
+
+expect('returns null for too-short queries',
+  findKhanByIndexTitle('a'),
+  (r) => r === null);
+
+expect('source field is "index"',
+  findKhanByIndexTitle('Pythagorean theorem'),
+  (r) => !r || r.source === 'index');
 
 // ── parseYouTubeId (mirrored from content.js) ────────────────
 // Kept in sync manually with content.js; if you change one, update both

@@ -617,6 +617,21 @@
     const loose = looseLocalMatch(topic);
     if (loose && loose.youtube) return Object.assign({}, loose);
 
+    // 2.5) Bundled Khan Academy video index — 1300+ math videos extracted
+    //      from tamnd/khanacademy-index. Cache hits in the DB so subsequent
+    //      lookups for the same topic don't pay the linear-scan cost.
+    if (typeof findKhanByIndexTitle === 'function') {
+      try {
+        const ix = findKhanByIndexTitle(topic);
+        if (ix && ix.youtube) {
+          if (typeof KBdb !== 'undefined') {
+            KBdb.saveMapping(topicKey(topic, ctx), { youtube: ix.youtube, title: ix.title, source: 'youtube-api' });
+          }
+          return ix;
+        }
+      } catch (e) { LOG('index lookup failed', e); }
+    }
+
     // 3) Single YouTube API search on Khan's channel (with 4s timeout)
     if (ytApiKey) {
       const yt = await ytSearch(topic, KHAN_CHANNEL_ID)
